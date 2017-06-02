@@ -335,9 +335,16 @@ func containerTagSet(ts opentsdb.TagSet, container *v1.ContainerInfo, config *co
 	}
 	re := regexp.MustCompile("\\W")
 	if config.TagsFromLabels != nil {
-		for _, label := range config.TagsFromLabels {
+		for short_label, label := range config.TagsFromLabels {
 			if val, ok := container.Labels[label]; ok {
-				tags[re.ReplaceAllString(label, "_")] = val
+				tags[re.ReplaceAllString(short_label, "_")] = val
+			}
+		}
+	}
+	if config.IgnoreTags != nil {
+		for _,tag := range config.IgnoreTags {
+			if _, ok := tags[tag]; ok {
+				delete(tags, tag)
 			}
 		}
 	}
