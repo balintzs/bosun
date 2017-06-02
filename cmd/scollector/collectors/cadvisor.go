@@ -281,6 +281,21 @@ var cadvisorMeta = map[string]MetricMeta{
 		Unit:     metadata.Fault,
 		Desc:     "The number of times the cgroup limit was exceeded.",
 	},
+	"container.memory.limit": {
+		RateType: metadata.Gauge,
+		Unit:     metadata.Bytes,
+		Desc:     "The amount of memory requested.",
+	},
+	"container.memory.reservation": {
+		RateType: metadata.Gauge,
+		Unit:     metadata.Bytes,
+		Desc:     "The amount of guaranteed memory.",
+	},
+	"container.memory.swap_limit": {
+		RateType: metadata.Gauge,
+		Unit:     metadata.Bytes,
+		Desc:     "The amount of swap space requested.",
+	},
 	"container.net.bytes": {
 		RateType: metadata.Counter,
 		Unit:     metadata.Bytes,
@@ -469,6 +484,9 @@ func statsForContainer(md *opentsdb.MultiDataPoint, container *v1.ContainerInfo,
 		cadvisorAdd(md, "container.memory.rss", stats.Memory.RSS, containerTagSet(nil, container, config))
 		cadvisorAdd(md, "container.memory.swap", stats.Memory.Swap, containerTagSet(nil, container, config))
 		cadvisorAdd(md, "container.memory.failcnt", stats.Memory.Failcnt, containerTagSet(nil, container, config))
+		cadvisorAdd(md, "container.memory.limit", container.Spec.Memory.Limit, containerTagSet(nil, container, config))
+		cadvisorAdd(md, "container.memory.reservation", stats.Spec.Memory.Reservation, containerTagSet(nil, container, config))
+		cadvisorAdd(md, "container.memory.swap_limit", stats.Spec.Memory.SwapLimit, containerTagSet(nil, container, config))
 	}
 
 	if container.Spec.HasNetwork {
