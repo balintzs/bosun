@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"regexp"
 
 	"github.com/google/cadvisor/client"
 	"github.com/google/cadvisor/info/v1"
@@ -316,7 +317,7 @@ func cadvisorAdd(md *opentsdb.MultiDataPoint, name string, value interface{}, ts
 	Add(md, name, value, ts, cadvisorMeta[name].RateType, cadvisorMeta[name].Unit, cadvisorMeta[name].Desc)
 }
 
-func containerTagSet(ts opentsdb.TagSet, container *v1.ContainerInfo) opentsdb.TagSet {
+func containerTagSet(ts opentsdb.TagSet, container *v1.ContainerInfo, config *conf.Cadvisor) opentsdb.TagSet {
 	var tags opentsdb.TagSet
 	if container.Namespace == "docker" {
 		tags = opentsdb.TagSet{
@@ -331,6 +332,14 @@ func containerTagSet(ts opentsdb.TagSet, container *v1.ContainerInfo) opentsdb.T
 	}
 	for k, v := range ts {
 		tags[k] = v
+	}
+	re := regexp.MustCompile("\\W")
+	if config.TagsFromLabels != nil {
+		for _, label := range config.TagsFromLabels {
+			if val, ok := container.Labels[label]; ok {
+				tags[re.ReplaceAllString(label, "_")] = val
+			}
+		}
 	}
 	return tags
 }
@@ -355,7 +364,7 @@ func addBlkioStat(md *opentsdb.MultiDataPoint, name string, diskStats v1.PerDisk
 	}
 	for label, val := range diskStats.Stats {
 		if inBlkioWhitelist(label) {
-			cadvisorAdd(md, name+strings.ToLower(label), val, containerTagSet(opentsdb.TagSet{"dev": device}, container))
+			cadvisorAdd(md, name+strings.ToLower(label), val, containerTagSet(opentsdb.TagSet{"dev": device}, container, config))
 		}
 	}
 }
@@ -402,16 +411,16 @@ func statsForContainer(md *opentsdb.MultiDataPoint, container *v1.ContainerInfo,
 	stats := container.Stats[0]
 	var ts opentsdb.TagSet
 	if container.Spec.HasCpu {
-		cadvisorAdd(md, "container.cpu", stats.Cpu.Usage.System, containerTagSet(opentsdb.TagSet{"type": "system"}, container))
-		cadvisorAdd(md, "container.cpu", stats.Cpu.Usage.User, containerTagSet(opentsdb.TagSet{"type": "user"}, container))
+		cadvisorAdd(md, "container.cpu", stats.Cpu.Usage.System, containerTagSet(opentsdb.TagSet{"type": "system"}, container, config))
+		cadvisorAdd(md, "container.cpu", stats.Cpu.Usage.User, containerTagSet(opentsdb.TagSet{"type": "user"}, container, config))
 
-		ts = containerTagSet(ts, container)
+		ts = containerTagSet(ts, container, config)
 		cadvisorAdd(md, "container.cpu.loadavg", stats.Cpu.LoadAverage, ts)
 		cadvisorAdd(md, "container.cpu.usage", stats.Cpu.Usage.Total, ts)
 
 		if config.PerCpuUsage {
 			for idx := range stats.Cpu.Usage.PerCpu {
-				ts = containerTagSet(opentsdb.TagSet{"cpu": strconv.Itoa(idx)}, container)
+				ts = containerTagSet(opentsdb.TagSet{"cpu": strconv.Itoa(idx)}, container, config)
 				cadvisorAdd(md, "container.cpu.usage.percpu", stats.Cpu.Usage.PerCpu[idx], ts)
 			}
 		}
@@ -420,7 +429,7 @@ func statsForContainer(md *opentsdb.MultiDataPoint, container *v1.ContainerInfo,
 
 	if container.Spec.HasFilesystem {
 		for idx := range stats.Filesystem {
-			ts = containerTagSet(opentsdb.TagSet{"device": stats.Filesystem[idx].Device}, container)
+			ts = containerTagSet(opentsdb.TagSet{"device": stats.Filesystem[idx].Device}, container, config)
 			cadvisorAdd(md, "container.fs.available", stats.Filesystem[idx].Available, ts)
 			cadvisorAdd(md, "container.fs.limit", stats.Filesystem[idx].Limit, ts)
 			cadvisorAdd(md, "container.fs.usage", stats.Filesystem[idx].Usage, ts)
@@ -440,57 +449,57 @@ func statsForContainer(md *opentsdb.MultiDataPoint, container *v1.ContainerInfo,
 
 	if container.Spec.HasMemory {
 		cadvisorAdd(md, "container.memory.failures", stats.Memory.ContainerData.Pgfault,
-			containerTagSet(opentsdb.TagSet{"scope": "container", "type": "pgfault"}, container))
+			containerTagSet(opentsdb.TagSet{"scope": "container", "type": "pgfault"}, container, config))
 		cadvisorAdd(md, "container.memory.failures", stats.Memory.ContainerData.Pgmajfault,
-			containerTagSet(opentsdb.TagSet{"scope": "container", "type": "pgmajfault"}, container))
+			containerTagSet(opentsdb.TagSet{"scope": "container", "type": "pgmajfault"}, container, config))
 		cadvisorAdd(md, "container.memory.failures", stats.Memory.HierarchicalData.Pgfault,
-			containerTagSet(opentsdb.TagSet{"scope": "hierarchy", "type": "pgfault"}, container))
+			containerTagSet(opentsdb.TagSet{"scope": "hierarchy", "type": "pgfault"}, container, config))
 		cadvisorAdd(md, "container.memory.failures", stats.Memory.HierarchicalData.Pgmajfault,
-			containerTagSet(opentsdb.TagSet{"scope": "hierarchy", "type": "pgmajfault"}, container))
-		cadvisorAdd(md, "container.memory.working_set", stats.Memory.WorkingSet, containerTagSet(nil, container))
-		cadvisorAdd(md, "container.memory.usage", stats.Memory.Usage, containerTagSet(nil, container))
-		cadvisorAdd(md, "container.memory.cache", stats.Memory.Cache, containerTagSet(nil, container))
-		cadvisorAdd(md, "container.memory.rss", stats.Memory.RSS, containerTagSet(nil, container))
-		cadvisorAdd(md, "container.memory.swap", stats.Memory.Swap, containerTagSet(nil, container))
-		cadvisorAdd(md, "container.memory.failcnt", stats.Memory.Failcnt, containerTagSet(nil, container))
+			containerTagSet(opentsdb.TagSet{"scope": "hierarchy", "type": "pgmajfault"}, container, config))
+		cadvisorAdd(md, "container.memory.working_set", stats.Memory.WorkingSet, containerTagSet(nil, container, config))
+		cadvisorAdd(md, "container.memory.usage", stats.Memory.Usage, containerTagSet(nil, container, config))
+		cadvisorAdd(md, "container.memory.cache", stats.Memory.Cache, containerTagSet(nil, container, config))
+		cadvisorAdd(md, "container.memory.rss", stats.Memory.RSS, containerTagSet(nil, container, config))
+		cadvisorAdd(md, "container.memory.swap", stats.Memory.Swap, containerTagSet(nil, container, config))
+		cadvisorAdd(md, "container.memory.failcnt", stats.Memory.Failcnt, containerTagSet(nil, container, config))
 	}
 
 	if container.Spec.HasNetwork {
 		for _, iface := range stats.Network.Interfaces {
-			ts = containerTagSet(opentsdb.TagSet{"ifName": iface.Name, "direction": "in"}, container)
+			ts = containerTagSet(opentsdb.TagSet{"ifName": iface.Name, "direction": "in"}, container, config)
 			cadvisorAdd(md, "container.net.bytes", iface.RxBytes, ts)
 			cadvisorAdd(md, "container.net.errors", iface.RxErrors, ts)
 			cadvisorAdd(md, "container.net.dropped", iface.RxDropped, ts)
 			cadvisorAdd(md, "container.net.packets", iface.RxPackets, ts)
-			ts = containerTagSet(opentsdb.TagSet{"ifName": iface.Name, "direction": "out"}, container)
+			ts = containerTagSet(opentsdb.TagSet{"ifName": iface.Name, "direction": "out"}, container, config)
 			cadvisorAdd(md, "container.net.bytes", iface.TxBytes, ts)
 			cadvisorAdd(md, "container.net.errors", iface.TxErrors, ts)
 			cadvisorAdd(md, "container.net.dropped", iface.TxDropped, ts)
 			cadvisorAdd(md, "container.net.packets", iface.TxPackets, ts)
 		}
-		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.Close, containerTagSet(opentsdb.TagSet{"state": "close"}, container))
-		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.CloseWait, containerTagSet(opentsdb.TagSet{"state": "closewait"}, container))
-		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.Closing, containerTagSet(opentsdb.TagSet{"state": "closing"}, container))
-		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.Established, containerTagSet(opentsdb.TagSet{"state": "established"}, container))
-		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.FinWait1, containerTagSet(opentsdb.TagSet{"state": "finwait1"}, container))
-		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.FinWait2, containerTagSet(opentsdb.TagSet{"state": "finwait2"}, container))
-		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.LastAck, containerTagSet(opentsdb.TagSet{"state": "lastack"}, container))
-		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.Listen, containerTagSet(opentsdb.TagSet{"state": "listen"}, container))
-		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.SynRecv, containerTagSet(opentsdb.TagSet{"state": "synrecv"}, container))
-		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.SynSent, containerTagSet(opentsdb.TagSet{"state": "synsent"}, container))
-		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.TimeWait, containerTagSet(opentsdb.TagSet{"state": "timewait"}, container))
+		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.Close, containerTagSet(opentsdb.TagSet{"state": "close"}, container, config))
+		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.CloseWait, containerTagSet(opentsdb.TagSet{"state": "closewait"}, container, config))
+		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.Closing, containerTagSet(opentsdb.TagSet{"state": "closing"}, container, config))
+		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.Established, containerTagSet(opentsdb.TagSet{"state": "established"}, container, config))
+		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.FinWait1, containerTagSet(opentsdb.TagSet{"state": "finwait1"}, container, config))
+		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.FinWait2, containerTagSet(opentsdb.TagSet{"state": "finwait2"}, container, config))
+		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.LastAck, containerTagSet(opentsdb.TagSet{"state": "lastack"}, container, config))
+		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.Listen, containerTagSet(opentsdb.TagSet{"state": "listen"}, container, config))
+		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.SynRecv, containerTagSet(opentsdb.TagSet{"state": "synrecv"}, container, config))
+		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.SynSent, containerTagSet(opentsdb.TagSet{"state": "synsent"}, container, config))
+		cadvisorAdd(md, "container.net.tcp", stats.Network.Tcp.TimeWait, containerTagSet(opentsdb.TagSet{"state": "timewait"}, container, config))
 
-		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.Close, containerTagSet(opentsdb.TagSet{"state": "close"}, container))
-		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.CloseWait, containerTagSet(opentsdb.TagSet{"state": "closewait"}, container))
-		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.Closing, containerTagSet(opentsdb.TagSet{"state": "closing"}, container))
-		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.Established, containerTagSet(opentsdb.TagSet{"state": "established"}, container))
-		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.FinWait1, containerTagSet(opentsdb.TagSet{"state": "finwait1"}, container))
-		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.FinWait2, containerTagSet(opentsdb.TagSet{"state": "finwait2"}, container))
-		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.LastAck, containerTagSet(opentsdb.TagSet{"state": "lastack"}, container))
-		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.Listen, containerTagSet(opentsdb.TagSet{"state": "listen"}, container))
-		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.SynRecv, containerTagSet(opentsdb.TagSet{"state": "synrecv"}, container))
-		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.SynSent, containerTagSet(opentsdb.TagSet{"state": "synsent"}, container))
-		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.TimeWait, containerTagSet(opentsdb.TagSet{"state": "timewait"}, container))
+		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.Close, containerTagSet(opentsdb.TagSet{"state": "close"}, container, config))
+		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.CloseWait, containerTagSet(opentsdb.TagSet{"state": "closewait"}, container, config))
+		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.Closing, containerTagSet(opentsdb.TagSet{"state": "closing"}, container, config))
+		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.Established, containerTagSet(opentsdb.TagSet{"state": "established"}, container, config))
+		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.FinWait1, containerTagSet(opentsdb.TagSet{"state": "finwait1"}, container, config))
+		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.FinWait2, containerTagSet(opentsdb.TagSet{"state": "finwait2"}, container, config))
+		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.LastAck, containerTagSet(opentsdb.TagSet{"state": "lastack"}, container, config))
+		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.Listen, containerTagSet(opentsdb.TagSet{"state": "listen"}, container, config))
+		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.SynRecv, containerTagSet(opentsdb.TagSet{"state": "synrecv"}, container, config))
+		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.SynSent, containerTagSet(opentsdb.TagSet{"state": "synsent"}, container, config))
+		cadvisorAdd(md, "container.net.tcp6", stats.Network.Tcp6.TimeWait, containerTagSet(opentsdb.TagSet{"state": "timewait"}, container, config))
 	}
 
 	if container.Spec.HasDiskIo {

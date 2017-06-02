@@ -227,6 +227,7 @@ type Cadvisor struct {
 	URL         string
 	PerCpuUsage bool
 	IsRemote    bool
+	TagsFromLabels  []string
 }
 
 type RedisCounters struct {
