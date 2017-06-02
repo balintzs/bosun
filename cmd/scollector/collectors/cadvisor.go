@@ -485,8 +485,8 @@ func statsForContainer(md *opentsdb.MultiDataPoint, container *v1.ContainerInfo,
 		cadvisorAdd(md, "container.memory.swap", stats.Memory.Swap, containerTagSet(nil, container, config))
 		cadvisorAdd(md, "container.memory.failcnt", stats.Memory.Failcnt, containerTagSet(nil, container, config))
 		cadvisorAdd(md, "container.memory.limit", container.Spec.Memory.Limit, containerTagSet(nil, container, config))
-		cadvisorAdd(md, "container.memory.reservation", stats.Spec.Memory.Reservation, containerTagSet(nil, container, config))
-		cadvisorAdd(md, "container.memory.swap_limit", stats.Spec.Memory.SwapLimit, containerTagSet(nil, container, config))
+		cadvisorAdd(md, "container.memory.reservation", container.Spec.Memory.Reservation, containerTagSet(nil, container, config))
+		cadvisorAdd(md, "container.memory.swap_limit", container.Spec.Memory.SwapLimit, containerTagSet(nil, container, config))
 	}
 
 	if container.Spec.HasNetwork {
